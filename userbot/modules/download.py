@@ -14,24 +14,86 @@ import json
 import os
 import subprocess
 from datetime import datetime
+import time
+import math
 
-import requests
+from pySmartDL import SmartDL
+import asyncio
 from hachoir.metadata import extractMetadata
 from hachoir.parser import createParser
 from telethon.tl.types import DocumentAttributeVideo
 
-from userbot import LOGS, CMD_HELP
+from userbot import LOGS, CMD_HELP, TEMP_DOWNLOAD_DIRECTORY
 from userbot.events import register
 
-TEMP_DOWNLOAD_DIRECTORY = os.environ.get("TMP_DOWNLOAD_DIRECTORY", "./")
 
+async def progress(current, total, event, start, type_of_ps, file_name = None):
+    """Generic progress_callback for both
+    upload.py and download.py"""
+    now = time.time()
+    diff = now - start
+    if round(diff % 10.00) == 0 or current == total:
+        percentage = current * 100 / total
+        speed = current / diff
+        elapsed_time = round(diff) * 1000
+        time_to_completion = round((total - current) / speed) * 1000
+        estimated_total_time = elapsed_time + time_to_completion
+        progress_str = "[{0}{1}]\nProgress: {2}%\n".format(
+            ''.join(["█" for i in range(math.floor(percentage / 5))]),
+            ''.join(["░" for i in range(20 - math.floor(percentage / 5))]),
+            round(percentage, 2))
+        tmp = progress_str + \
+            "{0} of {1}\nETA: {2}".format(
+                humanbytes(current),
+                humanbytes(total),
+                time_formatter(estimated_total_time)
+            )
+        if file_name:
+            await event.edit("{}\nFile Name: `{}`\n{}".format(
+                type_of_ps,
+                file_name,
+                tmp
+            ))
+        else:
+            await event.edit("{}\n{}".format(
+                type_of_ps,
+                tmp
+            ))
 
-def progress(current, total):
-    """ Logs the download progress """
-    LOGS.info(
-        "Downloaded %s of %s\nCompleted %s",
-        current, total, (current / total) * 100
-    )
+def humanbytes(size):
+    """Input size in bytes,
+    outputs in a human readable format"""
+    # https://stackoverflow.com/a/49361727/4723940
+    if not size:
+        return ""
+    # 2 ** 10 = 1024
+    power = 2 ** 10
+    raised_to_pow = 0
+    dict_power_n = {
+        0: "",
+        1: "Ki",
+        2: "Mi",
+        3: "Gi",
+        4: "Ti"
+    }
+    while size > power:
+        size /= power
+        raised_to_pow += 1
+    return str(round(size, 2)) + " " + dict_power_n[raised_to_pow] + "B"
+
+def time_formatter(milliseconds: int) -> str:
+    """Inputs time in milliseconds, to get beautified time,
+    as string"""
+    seconds, milliseconds = divmod(int(milliseconds), 1000)
+    minutes, seconds = divmod(seconds, 60)
+    hours, minutes = divmod(minutes, 60)
+    days, hours = divmod(hours, 24)
+    tmp = ((str(days) + " day(s), ") if days else "") + \
+        ((str(hours) + " hour(s), ") if hours else "") + \
+        ((str(minutes) + " minute(s), ") if minutes else "") + \
+        ((str(seconds) + " second(s), ") if seconds else "") + \
+        ((str(milliseconds) + " millisecond(s), ") if milliseconds else "")
+    return tmp[:-2]
 
 
 @register(pattern=r".download(?: |$)(.*)", outgoing=True)
@@ -44,50 +106,81 @@ async def download(target_file):
         input_str = target_file.pattern_match.group(1)
         if not os.path.isdir(TEMP_DOWNLOAD_DIRECTORY):
             os.makedirs(TEMP_DOWNLOAD_DIRECTORY)
-        if target_file.reply_to_msg_id:
+        elif input_str:
             start = datetime.now()
-            downloaded_file_name = await target_file.client.download_media(
-                await target_file.get_reply_message(),
-                TEMP_DOWNLOAD_DIRECTORY,
-                progress_callback=progress,
-            )
-            end = datetime.now()
-            duration = (end - start).seconds
-            await target_file.edit(
-                "Downloaded to `{}` in {} seconds.".format(
-                    downloaded_file_name, duration)
-            )
-        elif "|" in input_str:
-            url, file_name = input_str.split("|")
+            #input_str = input_str.strip()
+            url = input_str
+            file_name = os.path.basename(url)
+            if "," in input_str:
+                url, file_name = input_str.split(",")
+            input_str = input_str.strip()
             url = url.strip()
-            # https://stackoverflow.com/a/761825/4723940
             file_name = file_name.strip()
-            required_file_name = TEMP_DOWNLOAD_DIRECTORY + "" + file_name
-            start = datetime.now()
-            resp = requests.get(url, stream=True)
-            with open(required_file_name, "wb") as file:
-                total_length = resp.headers.get("content-length")
-                # https://stackoverflow.com/a/15645088/4723940
-                if total_length is None:  # no content length header
-                    file.write(resp.content)
-                else:
-                    downloaded = 0
-                    total_length = int(total_length)
-                    for chunk in resp.iter_content(chunk_size=128):
-                        downloaded += len(chunk)
-                        file.write(chunk)
-                        done = int(100 * downloaded / total_length)
-                        download_progress_string = "Downloading ... [%s%s]" % (
-                            "=" * done,
-                            " " * (50 - done),
-                        )
-                        LOGS.info(download_progress_string)
+            # https://stackoverflow.com/a/761825/4723940
+            head, tail = os.path.split(file_name)
+            if head:
+                if not os.path.isdir(os.path.join(TEMP_DOWNLOAD_DIRECTORY, head)):
+                    os.makedirs(os.path.join(TEMP_DOWNLOAD_DIRECTORY, head))
+                    file_name = os.path.join(head, tail)
+            downloaded_file_name = TEMP_DOWNLOAD_DIRECTORY + "" + file_name
+            downloader = SmartDL(url, downloaded_file_name, progress_bar=False)
+            downloader.start(blocking=False)
+            c_time = time.time()
+            display_message = None
+            while not downloader.isFinished():
+                status = downloader.get_status().capitalize()
+                total_length = downloader.filesize if downloader.filesize else None
+                downloaded = downloader.get_dl_size()
+                now = time.time()
+                diff = now - c_time
+                percentage = downloader.get_progress()*100
+                speed = downloader.get_speed()
+                elapsed_time = round(diff) * 1000
+                progress_str = "[{0}{1}]\nProgress: {2}%".format(
+                    ''.join(["●" for i in range(math.floor(percentage / 5))]),
+                    ''.join(["○" for i in range(20 - math.floor(percentage / 5))]),
+                    round(percentage, 2))
+                estimated_total_time = downloader.get_eta(human=True)
+                try:
+                    current_message = f"{status}..\nURL: {url}\nFile Name: {file_name}\n{progress_str}\n{humanbytes(downloaded)} of {humanbytes(total_length)}\nETA: {estimated_total_time}"
+                    if current_message != display_message:
+                        await target_file.edit(current_message)
+                        display_message = current_message
+                        await asyncio.sleep(1)
+                except Exception as e:
+                    LOGS.info(str(e))
+                    pass
             end = datetime.now()
             duration = (end - start).seconds
-            await target_file.edit(
-                "Downloaded to `{}` in {} seconds.".format(
-                    required_file_name, duration)
-            )
+            if downloader.isSuccessful():
+                await target_file.edit(
+                    "Downloaded to `{}` in {} seconds.".format(
+                        downloaded_file_name, duration)
+                )
+            else:
+                await target_file.edit(
+                    "Incorrect URL\n{}".format(url)
+                )
+        elif target_file.reply_to_msg_id:
+            start = datetime.now()
+            try:
+                c_time = time.time()
+                downloaded_file_name = await target_file.client.download_media(
+                    await target_file.get_reply_message(),
+                    TEMP_DOWNLOAD_DIRECTORY,
+                    progress_callback=lambda d, t: asyncio.get_event_loop().create_task(
+                        progress(d, t, target_file, c_time, "Downloading...")
+                    )
+                )
+            except Exception as e: # pylint:disable=C0103,W0703
+                await target_file.edit(str(e))
+            else:
+                end = datetime.now()
+                duration = (end - start).seconds
+                await target_file.edit(
+                    "Downloaded to `{}` in {} seconds.".format(
+                        downloaded_file_name, duration)
+                )
         else:
             await target_file.edit("Reply to a message to download to my local server.")
 
@@ -119,6 +212,7 @@ async def uploadir(udir_event):
                 if os.path.exists(single_file):
                     # https://stackoverflow.com/a/678242/4723940
                     caption_rts = os.path.basename(single_file)
+                    c_time = time.time()
                     if not caption_rts.lower().endswith(".mp4"):
                         await udir_event.client.send_file(
                             udir_event.chat_id,
@@ -127,10 +221,13 @@ async def uploadir(udir_event):
                             force_document=False,
                             allow_cache=False,
                             reply_to=udir_event.message.id,
-                            progress_callback=progress,
+                            progress_callback=lambda d, t: asyncio.get_event_loop().create_task(
+                                progress(d, t, udir_event, c_time, "Uploading...", single_file)
+                            )
                         )
                     else:
                         thumb_image = os.path.join(input_str, "thumb.jpg")
+                        c_time = time.time()
                         metadata = extractMetadata(createParser(single_file))
                         duration = 0
                         width = 0
@@ -158,7 +255,9 @@ async def uploadir(udir_event):
                                     supports_streaming=True,
                                 )
                             ],
-                            progress_callback=progress,
+                            progress_callback=lambda d, t: asyncio.get_event_loop().create_task(
+                                progress(d, t, udir_event, c_time, "Uploading...", single_file)
+                            )
                         )
                     os.remove(single_file)
                     uploaded = uploaded + 1
@@ -185,23 +284,27 @@ async def upload(u_event):
             return
         if os.path.exists(input_str):
             start = datetime.now()
+            c_time = time.time()
             await u_event.client.send_file(
                 u_event.chat_id,
                 input_str,
                 force_document=True,
                 allow_cache=False,
                 reply_to=u_event.message.id,
-                progress_callback=progress,
+                progress_callback=lambda d, t: asyncio.get_event_loop().create_task(
+                    progress(d, t, u_event, c_time, "Uploading...", input_str)
+                )
             )
             end = datetime.now()
             duration = (end - start).seconds
             await u_event.edit("Uploaded in {} seconds.".format(duration))
         else:
             await u_event.edit("404: File Not Found")
+            await u_event.delete()
 
 
 def get_video_thumb(file, output=None, width=90):
-    """ Get video thhumbnail """
+    """ Get video thumbnail """
     metadata = extractMetadata(createParser(file))
     popen = subprocess.Popen(
         [
@@ -295,6 +398,7 @@ async def uploadas(uas_event):
                 height = metadata.get("height")
             try:
                 if supports_streaming:
+                    c_time = time.time()
                     await uas_event.client.send_file(
                         uas_event.chat_id,
                         file_name,
@@ -312,9 +416,12 @@ async def uploadas(uas_event):
                                 supports_streaming=True,
                             )
                         ],
-                        progress_callback=progress,
+                        progress_callback=lambda d, t: asyncio.get_event_loop().create_task(
+                            progress(d, t, uas_event, c_time, "Uploading...", file_name)
+                        )
                     )
                 elif round_message:
+                    c_time = time.time()
                     await uas_event.client.send_file(
                         uas_event.chat_id,
                         file_name,
@@ -331,7 +438,9 @@ async def uploadas(uas_event):
                                 supports_streaming=True,
                             )
                         ],
-                        progress_callback=progress,
+                        progress_callback=lambda d, t: asyncio.get_event_loop().create_task(
+                            progress(d, t, uas_event, c_time, "Uploading...", file_name)
+                        )
                     )
                 elif spam_big_messages:
                     await uas_event.edit("TBD: Not (yet) Implemented")
@@ -346,8 +455,8 @@ async def uploadas(uas_event):
             await uas_event.edit("404: File Not Found")
 
 CMD_HELP.update({
-    "download": ".download <link>\nUsage: Downloads file from link to the server."
-})
-CMD_HELP.update({
-    "upload": ".upload <link>\nUsage: Uploads a locally stored file to telegram."
+    "download": ".download <link|filename> or reply to media\
+\nUsage: Downloads file to the server.\
+\n\n.upload <path in server>\
+\nUsage: Uploads a locally stored file to the chat."
 })
