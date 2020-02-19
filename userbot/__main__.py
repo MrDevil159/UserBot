@@ -32,7 +32,8 @@ for module_name in ALL_MODULES:
 LOGS.info("Your userbot version is 3.0 sql-extended")
 
 LOGS.info("Congratulations, your userbot is now running !! Test it by typing .alive in any chat."
-          "If you need assistance, head to https://t.me/PaperplaneExtendedChat")
+          "If you need assistance, head to https://t.me/userbot_support or https://t.me/shivamkchoudhary")
+LOGS.info("Your Bot Version is 3.0-sql-extended")
 
 
 if len(argv) not in (1, 3, 4):
