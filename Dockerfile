@@ -42,7 +42,6 @@ RUN apk add --no-cache --update \
     py-sqlalchemy \
     py-tz \
     py3-aiohttp \
-    python-dev \
     openssl \
     pv \
     jq \
@@ -53,7 +52,8 @@ RUN apk add --no-cache --update \
     sqlite \
     sqlite-dev \
     sudo \
-    zlib-dev
+    zlib-dev \
+    python-dev
 
 RUN pip3 install --upgrade pip setuptools
 
