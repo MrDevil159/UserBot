@@ -8,52 +8,46 @@ RUN sed -e 's;^#http\(.*\)/v3.9/community;http\1/v3.9/community;g' -i /etc/apk/r
 
 # Installing Python
 RUN apk add --no-cache --update \
-    bash \
+   bash \
     build-base \
     bzip2-dev \
     curl \
+    coreutils \
     figlet \
     gcc \
+    g++ \
     git \
-    sudo \
+    aria2 \
     util-linux \
+    libevent \
+    libjpeg-turbo-dev \
     chromium \
     chromium-chromedriver \
     jpeg-dev \
+    libc-dev \
     libffi-dev \
     libpq \
     libwebp-dev \
-    libxml2 \
     libxml2-dev \
     libxslt-dev \
     linux-headers \
-    musl \
+    musl-dev \
     neofetch \
     openssl-dev \
-    php-pgsql \
-    postgresql \
     postgresql-client \
     postgresql-dev \
-    py-lxml \
-    py-pillow \
-    py-pip \
-    py-psycopg2 \
-    py-requests \
-    py-sqlalchemy \
-    py-tz \
-    py3-aiohttp \
-    openssl \
     pv \
     jq \
     wget \
-    python3 \
     python3-dev \
     readline-dev \
-    sqlite \
+    ffmpeg \
+    figlet \
     sqlite-dev \
     sudo \
     zlib-dev \
     python-dev
+
 
 RUN pip3 install --upgrade pip setuptools
 
