@@ -23,7 +23,6 @@ pybase64>=0.4.0
 pylast
 pySmartDL
 python-dotenv
-pytube>=9.5.1
 pytz
 qrcode
 requests>=2.18.4
