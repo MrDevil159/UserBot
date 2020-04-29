@@ -2,7 +2,8 @@
 #
 # Licensed under the Raphielscape Public License, Version 1.b (the "License");
 # you may not use this file except in compliance with the License.
-#
+# sp by peru @AvinashReddy3108 & @Zero_cool7870
+
 
 """ Userbot module containing various scrapers. """
 
@@ -10,13 +11,13 @@ import os
 import shutil
 from bs4 import BeautifulSoup
 import re
+import json
+import asyncio
 from time import sleep
 from html import unescape
 from re import findall
 from datetime import datetime
 from selenium import webdriver
-from urllib.parse import quote_plus
-from urllib.error import HTTPError
 from selenium.webdriver.support.ui import Select
 from selenium.webdriver.chrome.options import Options
 from wikipedia import summary
@@ -29,74 +30,16 @@ from googleapiclient.errors import HttpError
 from googletrans import LANGUAGES, Translator
 from gtts import gTTS
 from emoji import get_emoji_regexp
-from pytube.helpers import safe_filename
-
-from userbot import CMD_HELP, BOTLOG, BOTLOG_CHATID, CHROME_DRIVER, GOOGLE_CHROME_BIN
+from youtube_dl import YoutubeDL
+from youtube_dl.utils import (DownloadError, ContentTooShortError,
+                              ExtractorError, GeoRestrictedError,
+                              MaxDownloadsReached, PostProcessingError,
+                              UnavailableVideoError, XAttrMetadataError)
+from userbot import CMD_HELP, BOTLOG, BOTLOG_CHATID
 from userbot.events import register
 
-CARBONLANG = "auto"
 LANG = "en"
 
-@register(outgoing=True, pattern="^.crblang")
-async def setlang(prog):
-    if not prog.text[0].isalpha() and prog.text[0] not in ("/", "#", "@", "!"):
-        global CARBONLANG
-        CARBONLANG = prog.text.split()[1]
-        await prog.edit(f"language set to {CARBONLANG}")
-
-@register(outgoing=True, pattern="^.carbon")
-async def carbon_api(e):
- if not e.text[0].isalpha() and e.text[0] not in ("/", "#", "@", "!"):
-   """ A Wrapper for carbon.now.sh """
-   await e.edit("`Processing..`")
-   CARBON = 'https://carbon.now.sh/?l={lang}&code={code}'
-   global CARBONLANG
-   textx = await e.get_reply_message()
-   pcode = e.text
-   if pcode[8:]:
-         pcode = str(pcode[8:])
-   elif textx:
-         pcode = str(textx.message) # Importing message to module
-   code = quote_plus(pcode) # Converting to urlencoded
-   await e.edit("`Processing..\n25%`")
-   url = CARBON.format(code=code, lang=CARBONLANG)
-   chrome_options = Options()
-   chrome_options.add_argument("--headless")
-   chrome_options.binary_location = GOOGLE_CHROME_BIN
-   chrome_options.add_argument("--window-size=1920x1080")
-   chrome_options.add_argument("--disable-dev-shm-usage")
-   chrome_options.add_argument("--no-sandbox")
-   chrome_options.add_argument("--disable-gpu")
-   prefs = {'download.default_directory' : './'}
-   chrome_options.add_experimental_option('prefs', prefs)
-   driver = webdriver.Chrome(executable_path=CHROME_DRIVER, options=chrome_options)
-   driver.get(url)
-   await e.edit("`Processing..\n50%`")
-   download_path = './'
-   driver.command_executor._commands["send_command"] = ("POST", '/session/$sessionId/chromium/send_command')
-   params = {'cmd': 'Page.setDownloadBehavior', 'params': {'behavior': 'allow', 'downloadPath': download_path}}
-   command_result = driver.execute("send_command", params)
-   driver.find_element_by_xpath("//button[contains(text(),'Export')]").click()
-   driver.find_element_by_xpath("//button[contains(text(),'4x')]").click()
-   driver.find_element_by_xpath("//button[contains(text(),'PNG')]").click()
-   await e.edit("`Processing..\n75%`")
-   # Waiting for downloading
-   sleep(2.5)
-   await e.edit("`Processing..\n100%`")
-   file = './carbon.png'
-   await e.edit("`Uploading..`")
-   await e.client.send_file(
-         e.chat_id,
-         file,
-         caption="Made using [Carbon](https://carbon.now.sh/about/), a project by [Dawn Labs](https://dawnlabs.io/)",
-         force_document=True,
-         reply_to=e.message.reply_to_msg_id,
-         )
-
-   os.remove('./carbon.png')
-   driver.quit()
-   # Removing carbon.png after uploading
-   await e.delete() # Deleting msg
 
 @register(outgoing=True, pattern="^.img (.*)")
 async def img_sampler(event):
@@ -128,97 +71,207 @@ async def img_sampler(event):
         shutil.rmtree(os.path.dirname(os.path.abspath(lst[0])))
         await event.delete()
 
-@register(outgoing=True, pattern="^.currency (.*)")
-async def _(event):
-    if not event.text[0].isalpha() and event.text[0] not in ("/", "#", "@", "!"):
-        if event.fwd_from:
+@register(outgoing=True, pattern="^.yt (.*)")
+async def yt_search(video_q):
+    """ For .yt command, do a YouTube search from Telegram. """
+    if not video_q.text[0].isalpha() and video_q.text[0] not in ("/", "#", "@",
+                                                                 "!"):
+        query = video_q.pattern_match.group(1)
+        result = ''
+
+        if not YOUTUBE_API_KEY:
+            await video_q.edit(
+                "`Error: YouTube API key missing! Add it to environment vars or config.env.`"
+            )
             return
-        start = datetime.now()
-        input_str = event.pattern_match.group(1)
-        input_sgra = input_str.split(" ")
-        if len(input_sgra) == 3:
-            try:
-                number = float(input_sgra[0])
-                currency_from = input_sgra[1].upper()
-                currency_to = input_sgra[2].upper()
-                request_url = "https://api.exchangeratesapi.io/latest?base={}".format(currency_from)
-                current_response = get(request_url).json()
-                if currency_to in current_response["rates"]:
-                    current_rate = float(current_response["rates"][currency_to])
-                    rebmun = round(number * current_rate, 2)
-                    await event.edit("{} {} = {} {}".format(number, currency_from, rebmun, currency_to))
-                else:
-                    await event.edit("`This seems to be some alien currency, which I can't convert right now.`")
-            except e:
-                await event.edit(str(e))
-        else:
-            await event.edit("`Invalid syntax.`")
-        end = datetime.now()
-        ms = (end - start).seconds
+
+        await video_q.edit("```Processing...```")
+
+        full_response = youtube_search(query)
+        videos_json = full_response[1]
+
+        for video in videos_json:
+            title = f"{unescape(video['snippet']['title'])}"
+            link = f"https://youtu.be/{video['id']['videoId']}"
+            result += f"{title}\n{link}\n\n"
+
+        reply_text = f"**Search Query:**: `{query}`\n\n{result}"
+
+        await video_q.edit(reply_text)
 
 
-@register(outgoing=True, pattern=r"^.search (.*)")
-async def gsearch(q_event):
-    """ For .google command, do a Google search. """
-    if not q_event.text[0].isalpha() and q_event.text[0] not in (
-            "/", "#", "@", "!"):
-        match_ = q_event.pattern_match.group(1)
-        match = quote_plus(match_)
-        plain_txt = get(f"https://www.startpage.com/do/search?cmd=process_search&query={match}", 'html').text
-        soup = BeautifulSoup(plain_txt, "lxml")
-        
-        msg = ""
-        for result in soup.find_all('a', {'class': 'w-gl__result-title'}):
-            title = result.text
-            link = result.get('href')
-            msg += f"{title}{link}\n"
-            
-        await q_event.edit(
-            "**Search Query:**\n`" + match_ + "`\n\n**Results:**\n" + msg,
-            link_preview = False
+def youtube_search(query,
+                   order="relevance",
+                   token=None,
+                   location=None,
+                   location_radius=None):
+    """ Do a YouTube search. """
+    youtube = build('youtube',
+                    'v3',
+                    developerKey=YOUTUBE_API_KEY,
+                    cache_discovery=False)
+    search_response = youtube.search().list(
+        q=query,
+        type="video",
+        pageToken=token,
+        order=order,
+        part="id,snippet",
+        maxResults=10,
+        location=location,
+        locationRadius=location_radius).execute()
+
+    videos = []
+
+    for search_result in search_response.get("items", []):
+        if search_result["id"]["kind"] == "youtube#video":
+            videos.append(search_result)
+    try:
+        nexttok = search_response["nextPageToken"]
+        return (nexttok, videos)
+    except HttpError:
+        nexttok = "last_page"
+        return (nexttok, videos)
+    except KeyError:
+        nexttok = "KeyError, try again."
+        return (nexttok, videos)
+
+# Thanks to @kandnub for parts of this code.
+# Do check out his cool userbot at
+# https://github.com/kandnub/TG-UserBot
+
+@register(outgoing=True, pattern=r".rip?(m|v) (.*)")
+async def download_video(v_url):
+    """ For .rip command, download media from YouTube + 800 other sites. """
+    url = v_url.pattern_match.group(2)
+    type = v_url.pattern_match.group(1).lower()
+
+    await v_url.edit("`Preparing to download...`")
+
+    if type == "audio":
+        opts = {
+            'format':
+            'bestaudio',
+            'key':
+            'FFmpegMetadata',
+            'writethumbnail':
+            True,
+            'prefer_ffmpeg':
+            True,
+            'geo_bypass':
+            True,
+            'nocheckcertificate':
+            True,
+            'postprocessors': [{
+                'key': 'FFmpegExtractAudio',
+                'preferredcodec': 'mp3',
+                'preferredquality': '320',
+            }],
+            'outtmpl':
+            '%(id)s.mp3',
+            'quiet':
+            True,
+            'logtostderr':
+            False
+        }
+        video = False
+        song = True
+
+    elif type == "video":
+        opts = {
+            'format':
+            'best',
+            'key':
+            'FFmpegMetadata',
+            'prefer_ffmpeg':
+            True,
+            'geo_bypass':
+            True,
+            'nocheckcertificate':
+            True,
+            'postprocessors': [{
+                'key': 'FFmpegVideoConvertor',
+                'preferedformat': 'mp4'
+            }],
+            'outtmpl':
+            '%(id)s.mp4',
+            'logtostderr':
+            False,
+            'quiet':
+            True
+        }
+        song = False
+        video = True
+
+    try:
+        await v_url.edit("`Downloading...`")
+        with YoutubeDL(opts) as rip:
+            rip_data = rip.extract_info(url)
+    except DownloadError as DE:
+        await v_url.edit(f"`{str(DE)}`")
+        return
+    except ContentTooShortError:
+        await v_url.edit("`The download content was too short.`")
+        return
+    except GeoRestrictedError:
+        await v_url.edit(
+            "`Video is not available from your geographic location due to geographic restrictions imposed by a website.`"
         )
-        
-        if BOTLOG:
-            await q_event.client.send_message(
-                BOTLOG_CHATID,
-                "Search query `" + match_ + "` was executed successfully",
-            )
+        return
+    except MaxDownloadsReached:
+        await v_url.edit("`Max-downloads limit has been reached.`")
+        return
+    except PostProcessingError:
+        await v_url.edit("`There was an error during post processing.`")
+        return
+    except UnavailableVideoError:
+        await v_url.edit("`Media is not available in the requested format.`")
+        return
+    except XAttrMetadataError as XAME:
+        await v_url.edit(f"`{XAME.code}: {XAME.msg}\n{XAME.reason}`")
+        return
+    except ExtractorError:
+        await v_url.edit("`There was an error during info extraction.`")
+        return
+    except Exception as e:
+        await v_url.edit(f"{str(type(e)): {str(e)}}")
+        return
+    await v_url.edit(f"`Uploading...`")
+    c_time = time.time()
+    if song:
+        await v_url.client.send_file(
+            v_url.chat_id,
+            f"{rip_data['id']}.mp3",
+            supports_streaming=True,
+            attributes=[
+                DocumentAttributeAudio(duration=int(rip_data['duration']),
+                                       title=str(rip_data['title']),
+                                       performer=str(rip_data['uploader']))
+            ],
+            progress_callback=lambda d, t: asyncio.get_event_loop(
+            ).create_task(
+                progress(d, t, v_url, c_time, "Uploading..",
+                         f"{rip_data['title']}.mp3")))
+        os.remove(f"{rip_data['id']}.mp3")
+        await v_url.delete()
+    elif video:
+        await v_url.client.send_file(
+            v_url.chat_id,
+            f"{rip_data['id']}.mp4",
+            supports_streaming=True,
+            caption=rip_data['title'],
+            progress_callback=lambda d, t: asyncio.get_event_loop(
+            ).create_task(
+                progress(d, t, v_url, c_time, "Uploading..",
+                         f"{rip_data['title']}.mp4")))
+        os.remove(f"{rip_data['id']}.mp4")
+        await v_url.delete()
 
-@register(outgoing=True, pattern=r"^.wiki (.*)")
-async def wiki(wiki_q):
-    """ For .google command, fetch content from Wikipedia. """
-    if not wiki_q.text[0].isalpha() and wiki_q.text[0] not in ("/", "#", "@", "!"):
-        match = wiki_q.pattern_match.group(1)
-        try:
-            summary(match)
-        except DisambiguationError as error:
-            await wiki_q.edit(f"Disambiguated page found.\n\n{error}")
-            return
-        except PageError as pageerror:
-            await wiki_q.edit(f"Page not found.\n\n{pageerror}")
-            return
-        result = summary(match)
-        if len(result) >= 4096:
-            file = open("output.txt", "w+")
-            file.write(result)
-            file.close()
-            await wiki_q.client.send_file(
-                wiki_q.chat_id,
-                "output.txt",
-                reply_to=wiki_q.id,
-                caption="`Output too large, sending as file`",
-            )
-            if os.path.exists("output.txt"):
-                os.remove("output.txt")
-            return
-        await wiki_q.edit(
-            "**Search:**\n`" + match + "`\n\n**Result:**\n" + result
-        )
-        if BOTLOG:
-            await wiki_q.client.send_message(
-                BOTLOG_CHATID,
-                f"Wiki query `{match}` was executed successfully"
-            )
+        
+
+
+def deEmojify(inputString):
+    """ Remove emojis and other non-safe characters from string """
+    return get_emoji_regexp().sub(u'', inputString)
 
 
 @register(outgoing=True, pattern="^.ud (.*)")
@@ -449,36 +502,53 @@ async def lang(value):
                 BOTLOG_CHATID, "Default language changed to **" + LANG + "**"
             )
             await value.edit("Default language changed to **" + LANG + "**")
+                  
+                  
+                  
+@register(outgoing=True, pattern=r"^.wiki (.*)")
+async def wiki(wiki_q):
+    """ For .google command, fetch content from Wikipedia. """
+    if not wiki_q.text[0].isalpha() and wiki_q.text[0] not in ("/", "#", "@",
+                                                               "!"):
+        match = wiki_q.pattern_match.group(1)
+        try:
+            summary(match)
+        except DisambiguationError as error:
+            await wiki_q.edit(f"Disambiguated page found.\n\n{error}")
+            return
+        except PageError as pageerror:
+            await wiki_q.edit(f"Page not found.\n\n{pageerror}")
+            return
+        result = summary(match)
+        if len(result) >= 4096:
+            file = open("output.txt", "w+")
+            file.write(result)
+            file.close()
+            await wiki_q.client.send_file(
+                wiki_q.chat_id,
+                "output.txt",
+                reply_to=wiki_q.id,
+                caption="`Output too large, sending as file`",
+            )
+            if os.path.exists("output.txt"):
+                os.remove("output.txt")
+            return
+        await wiki_q.edit("**Search:**\n`" + match + "`\n\n**Result:**\n" +
+                          result)
+        if BOTLOG:
+            await wiki_q.client.send_message(
+                BOTLOG_CHATID,
+                f"Wiki query `{match}` was executed successfully")
 
 
-
-def deEmojify(inputString):
-    """ Remove emojis and other non-safe characters from string """
-    return get_emoji_regexp().sub(u'', inputString)
 
 CMD_HELP.update({
     'img': '.img <search_query>\
         \nUsage: Does an image search on Google and shows 5 images.'
 })
 CMD_HELP.update({
-    'currency': '.currency <amount> <from> <to>\
-        \nUsage: Converts various currencies for you.'
-})
-CMD_HELP.update({
-    'carbon': '.carbon <text> [or reply]\
-        \nUsage: Beautify your code using carbon.now.sh\nUse .crblang <text> to set language for your code.'
-})
-CMD_HELP.update({
-    'search': '.search <query>\
-        \nUsage: Does a search on StartPage.'
-})
-CMD_HELP.update({
     'wiki': '.wiki <query>\
         \nUsage: Does a search on Wikipedia.'
-})
-CMD_HELP.update({
-    'ud': '.ud <query>\
-        \nUsage: Does a search on Urban Dictionary.'
 })
 CMD_HELP.update({
     'ud': '.ud <query>\
@@ -500,6 +570,7 @@ CMD_HELP.update({
     "imdb": ".imdb <movie-name>\nShows movie info and other stuffs"
 })
 CMD_HELP.update({
-    'yt_dl': '.yt_dl <url> <quality>\
-        \nUsage: Download videos from YouTube.If no quality is specified, the highest downloadable quality is downloaded. Will send the link if the video is larger than 50 MB.'
+    'rip':
+    '.ripm <url> or ripv <url>\
+        \nUsage: Download videos and songs from YouTube (and [many other sites](https://ytdl-org.github.io/youtube-dl/supportedsites.html)).'
 })
