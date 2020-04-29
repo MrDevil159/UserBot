@@ -29,10 +29,9 @@ from googleapiclient.errors import HttpError
 from googletrans import LANGUAGES, Translator
 from gtts import gTTS
 from emoji import get_emoji_regexp
-from pytube import YouTube
 from pytube.helpers import safe_filename
 
-from userbot import CMD_HELP, BOTLOG, BOTLOG_CHATID, YOUTUBE_API_KEY, CHROME_DRIVER, GOOGLE_CHROME_BIN
+from userbot import CMD_HELP, BOTLOG, BOTLOG_CHATID, CHROME_DRIVER, GOOGLE_CHROME_BIN
 from userbot.events import register
 
 CARBONLANG = "auto"
@@ -452,143 +451,6 @@ async def lang(value):
             await value.edit("Default language changed to **" + LANG + "**")
 
 
-@register(outgoing=True, pattern="^.yt (.*)")
-async def yt_search(video_q):
-    """ For .yt command, do a YouTube search from Telegram. """
-    if not video_q.text[0].isalpha() and video_q.text[0] not in ("/", "#", "@", "!"):
-        query = video_q.pattern_match.group(1)
-        result = ''
-
-        if not YOUTUBE_API_KEY:
-            await video_q.edit("`Error: YouTube API key missing! Add it to environment vars or config.env.`")
-            return
-
-        await video_q.edit("```Processing...```")
-
-        full_response = youtube_search(query)
-        videos_json = full_response[1]
-
-
-        for video in videos_json:
-            title = f"{unescape(video['snippet']['title'])}"
-            link = f"https://youtu.be/{video['id']['videoId']}"
-            result += f"{title}\n{link}\n\n"
-
-        reply_text = f"**Search Query:**\n`{query}`\n\n**Results:**\n\n{result}"
-
-        await video_q.edit(reply_text)
-
-
-def youtube_search(
-        query,
-        order="relevance",
-        token=None,
-        location=None,
-        location_radius=None
-    ):
-
-    """ Do a YouTube search. """
-    youtube = build('youtube', 'v3',
-                    developerKey=YOUTUBE_API_KEY, cache_discovery=False)
-    search_response = youtube.search().list(
-        q=query,
-        type="video",
-        pageToken=token,
-        order=order,
-        part="id,snippet",
-        maxResults=10,
-        location=location,
-        locationRadius=location_radius
-    ).execute()
-
-    videos = []
-
-    for search_result in search_response.get("items", []):
-        if search_result["id"]["kind"] == "youtube#video":
-            videos.append(search_result)
-    try:
-        nexttok = search_response["nextPageToken"]
-        return(nexttok, videos)
-    except HttpError:
-        nexttok = "last_page"
-        return(nexttok, videos)
-    except KeyError:
-        nexttok = "KeyError, try again."
-        return(nexttok, videos)
-
-
-@register(outgoing=True, pattern=r".yt_dl (\S*) ?(\S*)")
-async def download_video(v_url):
-    """ For .yt_dl command, download videos from YouTube. """
-    if not v_url.text[0].isalpha() and v_url.text[0] not in ("/", "#", "@", "!"):
-        url = v_url.pattern_match.group(1)
-        quality = v_url.pattern_match.group(2)
-
-        await v_url.edit("**Fetching...**")
-
-        video = YouTube(url)
-
-        if quality:
-            video_stream = video.streams.filter(
-                progressive=True,
-                subtype="mp4",
-                res=quality
-            ).first()
-        else:
-            video_stream = video.streams.filter(
-                progressive=True,
-                subtype="mp4"
-            ).first()
-
-        if video_stream is None:
-            all_streams = video.streams.filter(
-                progressive=True,
-                subtype="mp4"
-            ).all()
-            available_qualities = ""
-
-            for item in all_streams[:-1]:
-                available_qualities += f"{item.resolution}, "
-            available_qualities += all_streams[-1].resolution
-
-            await v_url.edit(
-                "**A stream matching your query wasn't found. Try again with different options.\n**"
-                "**Available Qualities:**\n"
-                f"{available_qualities}"
-            )
-            return
-
-        video_size = video_stream.filesize / 1000000
-
-        if video_size >= 50:
-            await v_url.edit(
-                ("**File larger than 50MB. Sending the link instead.\n**"
-                 f"Get the video [here]({video_stream.url})\n\n"
-                 "**If the video plays instead of downloading, right click(or long press on touchscreen) and "
-                 "press 'Save Video As...'(may depend on the browser) to download the video.**")
-            )
-            return
-
-        await v_url.edit("**Downloading...**")
-
-        video_stream.download(filename=video.title)
-
-        url = f"https://img.youtube.com/vi/{video.video_id}/maxresdefault.jpg"
-        resp = get(url)
-        with open('thumbnail.jpg', 'wb') as file:
-            file.write(resp.content)
-
-        await v_url.edit("**Uploading...**")
-        await v_url.client.send_file(
-            v_url.chat_id,
-            f'{safe_filename(video.title)}.mp4',
-            caption=f"{video.title}",
-            thumb="thumbnail.jpg"
-        )
-
-        os.remove(f"{safe_filename(video.title)}.mp4")
-        os.remove('thumbnail.jpg')
-        await v_url.delete()
 
 def deEmojify(inputString):
     """ Remove emojis and other non-safe characters from string """
